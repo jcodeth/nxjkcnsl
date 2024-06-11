@@ -14,11 +14,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
 
-namespace jkcnsl
+namespace nxjkcnsl
 {
     class Program
     {
-        const string UserAgent = "Mozilla/5.0";
+        const string UserAgent = "nxjkcnsl/0.1";
 
         const int MaxAcceptableWebSocketPayloadSize = 32768;
 
@@ -224,41 +224,15 @@ namespace jkcnsl
         }
 
         /// <summary>実況ストリーム(.nicovideo.jp)</summary>
-        static async Task GetStreamAsync(string lvId, string cookie, BlockingCollection<string> commands, CancellationToken ct)
+        static async Task GetStreamAsync(string lvId, string cookie_unused, BlockingCollection<string> commands, CancellationToken ct)
         {
             // メソッド実装にあたり特に https://github.com/tsukumijima/TVRemotePlus および https://github.com/asannou/namami を参考にした。
-
-            WatchEmbedded embedded = null;
-            if (Regex.IsMatch(lvId, "^(?:ch|co|lv)[0-9]+$"))
-            {
-                // 視聴セッション情報を取得
-                try
+            string webSocketUrl = "wss://nx-jikkyo.tsukumijima.net/api/v1/channels/";
+            if (Regex.IsMatch(lvId, "^[0-9]+$"))
                 {
-                    string ret = await HttpClientGetStringAsync("https://live2.nicovideo.jp/watch/" + lvId, cookie, ct);
-                    Match match = Regex.Match(ret, "<script(?= )([^>]*? id=\"embedded-data\"[^>]*)>");
-                    if (match.Success)
-                    {
-                        match = Regex.Match(match.Groups[1].Value, " data-props=\"([^\"]*)\"");
-                        if (match.Success)
-                        {
-                            var js = new DataContractJsonSerializer(typeof(WatchEmbedded));
-                            var _embedded = (WatchEmbedded)js.ReadObject(new MemoryStream(Encoding.UTF8.GetBytes(HttpUtility.HtmlDecode(match.Groups[1].Value))));
-                            // 一応ドメインを検査しておく(スクレイピングなので)
-                            if (_embedded.site != null && _embedded.site.relive != null &&
-                                Regex.IsMatch(_embedded.site.relive.webSocketUrl ?? "", @"^wss://[0-9A-Za-z.-]+\.nicovideo\.jp/"))
-                            {
-                                embedded = _embedded;
+                webSocketUrl += "jk" + lvId + "/ws/watch";
                             }
-                        }
-                    }
-                }
-                catch (Exception e)
-                {
-                    ct.ThrowIfCancellationRequested();
-                    Trace.WriteLine(e.ToString());
-                }
-            }
-            if (embedded == null)
+            else
             {
                 ResponseLines.Add("!");
                 return;
@@ -279,7 +253,7 @@ namespace jkcnsl
                     commentSession.Options.SetRequestHeader("User-Agent", UserAgent);
                     commentSession.Options.AddSubProtocol("msg.nicovideo.jp#json");
                     // 視聴セッションに接続
-                    await watchSession.ConnectAsync(new Uri(embedded.site.relive.webSocketUrl), ct);
+                    await watchSession.ConnectAsync(new Uri(webSocketUrl), ct);
                     await watchSession.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes(
                         "{\"type\":\"startWatching\",\"data\":{\"room\":{\"protocol\":\"webSocket\",\"commentable\":true},\"reconnect\":false}}")),
                         WebSocketMessageType.Text, true, ct);
@@ -354,51 +328,51 @@ namespace jkcnsl
                                     }
                                     if (comm.StartsWith("+[", StringComparison.Ordinal))
                                     {
-                                        // コメント投稿
-                                        string[] posts = comm.Substring(2).Split(new char[] { ']' }, 2);
-                                        if (posts.Length == 2 &&
-                                            embedded.program != null &&
-                                            (long)embedded.program.vposBaseTime > 0 &&
-                                            serverUnixTime >= (long)embedded.program.vposBaseTime)
-                                        {
-                                            // コメント欄を解釈
-                                            string mail = " " + posts[0] + " ";
-                                            Match matchColor = Regex.Match(mail, " (white|red|pink|orange|yellow|green|cyan|blue|purple|black|" +
-                                                "white2|niconicowhite|red2|truered|pink2|orange2|passionorange|yellow2|madyellow|green2|" +
-                                                "elementalgreen|cyan2|blue2|marineblue|purple2|nobleviolet|black2|#[0-9A-Fa-f]{6}) ");
-                                            Match matchFont = Regex.Match(mail, " (defont|mincho|gothic) ");
-                                            bool isAnonymous = Regex.IsMatch(mail, " 184 ");
-                                            Match matchPosition = Regex.Match(mail, " (ue|naka|shita) ");
-                                            Match matchSize = Regex.Match(mail, " (big|medium|small) ");
+                                    //    // コメント投稿
+                                    //    string[] posts = comm.Substring(2).Split(new char[] { ']' }, 2);
+                                    //    if (posts.Length == 2 &&
+                                    //        embedded.program != null &&
+                                    //        (long)embedded.program.vposBaseTime > 0 &&
+                                    //        serverUnixTime >= (long)embedded.program.vposBaseTime)
+                                    //    {
+                                    //        // コメント欄を解釈
+                                    //        string mail = " " + posts[0] + " ";
+                                    //        Match matchColor = Regex.Match(mail, " (white|red|pink|orange|yellow|green|cyan|blue|purple|black|" +
+                                    //            "white2|niconicowhite|red2|truered|pink2|orange2|passionorange|yellow2|madyellow|green2|" +
+                                    //            "elementalgreen|cyan2|blue2|marineblue|purple2|nobleviolet|black2|#[0-9A-Fa-f]{6}) ");
+                                    //        Match matchFont = Regex.Match(mail, " (defont|mincho|gothic) ");
+                                    //        bool isAnonymous = Regex.IsMatch(mail, " 184 ");
+                                    //        Match matchPosition = Regex.Match(mail, " (ue|naka|shita) ");
+                                    //        Match matchSize = Regex.Match(mail, " (big|medium|small) ");
 
-                                            // レコードセパレータ->改行
-                                            string text = posts[1].Replace('\x1e', '\n');
-                                            // vposは10msec単位。内部時計のずれに影響されないようにサーバ時刻を基準に補正
-                                            int vpos = (int)(serverUnixTime - (long)embedded.program.vposBaseTime) * 100 + (((Environment.TickCount & int.MaxValue) - serverUnixTimeTick) & int.MaxValue) / 10;
-                                            var ms = new MemoryStream();
-                                            jsWatchSessionPost.WriteObject(ms, new WatchSessionPost()
-                                            {
-                                                data = new WatchSessionPostData()
-                                                {
-                                                    color = matchColor.Success ? matchColor.Groups[1].Value : null,
-                                                    font = matchFont.Success ? matchFont.Groups[1].Value : null,
-                                                    isAnonymous = isAnonymous,
-                                                    position = matchPosition.Success ? matchPosition.Groups[1].Value : null,
-                                                    size = matchSize.Success ? matchSize.Groups[1].Value : null,
-                                                    text = text,
-                                                    vpos = vpos
-                                                },
-                                                type = "postComment"
-                                            });
-                                            byte[] post = ms.ToArray();
-                                            Trace.WriteLine(Encoding.UTF8.GetString(post));
-                                            await watchSession.SendAsync(new ArraySegment<byte>(post), WebSocketMessageType.Text, true, ct);
-                                        }
-                                        else
-                                        {
+                                    //        // レコードセパレータ->改行
+                                    //        string text = posts[1].Replace('\x1e', '\n');
+                                    //        // vposは10msec単位。内部時計のずれに影響されないようにサーバ時刻を基準に補正
+                                    //        int vpos = (int)(serverUnixTime - (long)embedded.program.vposBaseTime) * 100 + (((Environment.TickCount & int.MaxValue) - serverUnixTimeTick) & int.MaxValue) / 10;
+                                    //        var ms = new MemoryStream();
+                                    //        jsWatchSessionPost.WriteObject(ms, new WatchSessionPost()
+                                    //        {
+                                    //            data = new WatchSessionPostData()
+                                    //            {
+                                    //                color = matchColor.Success ? matchColor.Groups[1].Value : null,
+                                    //                font = matchFont.Success ? matchFont.Groups[1].Value : null,
+                                    //                isAnonymous = isAnonymous,
+                                    //                position = matchPosition.Success ? matchPosition.Groups[1].Value : null,
+                                    //                size = matchSize.Success ? matchSize.Groups[1].Value : null,
+                                    //                text = text,
+                                    //                vpos = vpos
+                                    //            },
+                                    //            type = "postComment"
+                                    //        });
+                                    //        byte[] post = ms.ToArray();
+                                    //        Trace.WriteLine(Encoding.UTF8.GetString(post));
+                                    //        await watchSession.SendAsync(new ArraySegment<byte>(post), WebSocketMessageType.Text, true, ct);
+                                    //    }
+                                    //    else
+                                    //    {
                                             // 投稿拒否
                                             ResponseLines.Add("-<chat_result status=\"1\" />");
-                                        }
+                                    //    }
                                     }
                                 }
                                 if (closed)
@@ -493,13 +467,18 @@ namespace jkcnsl
                                         var room = ((WatchSessionResultForRoom)jsWatchSessionResultForRoom.ReadObject(new MemoryStream(watchBuf, 0, watchCount))).data;
                                         if (room != null)
                                         {
+                                            string user = "guest";
+                                            string id = "idguest";
+                                            string nickname = "guest";
+                                            bool isLoggedIn = false;
+
                                             // 適当なタグをでっちあげてxmlに変換
                                             ResponseLines.Add(("-<x_room" +
                                                 (room.threadId != null ? " thread_id=\"" + HtmlEncodeAmpLtGt(room.threadId, true) + "\"" : "") +
                                                 (room.yourPostKey != null ? " your_post_key=\"" + HtmlEncodeAmpLtGt(room.yourPostKey, true) + "\"" : "") +
-                                                (embedded.user != null && embedded.user.id != null ? " user_id=\"" + HtmlEncodeAmpLtGt(embedded.user.id, true) + "\"" : "") +
-                                                (embedded.user != null && embedded.user.nickname != null ? " nickname=\"" + HtmlEncodeAmpLtGt(embedded.user.nickname, true) + "\"" : "") +
-                                                (embedded.user != null && embedded.user.isLoggedIn ? " is_logged_in=\"1\"" : "") + " />").Replace("\n", "&#10;").Replace("\r", "&#13;"));
+                                                (user != null && id != null ? " user_id=\"" + HtmlEncodeAmpLtGt(id, true) + "\"" : "") +
+                                                (user != null && nickname != null ? " nickname=\"" + HtmlEncodeAmpLtGt(nickname, true) + "\"" : "") +
+                                                (user != null && isLoggedIn ? " is_logged_in=\"1\"" : "") + " />").Replace("\n", "&#10;").Replace("\r", "&#13;"));
 
                                             if (room.threadId != null && room.messageServer != null && room.messageServer.uri != null &&
                                                 room.messageServer.uri.StartsWith("wss://", StringComparison.Ordinal))
@@ -514,7 +493,7 @@ namespace jkcnsl
                                                     {
                                                         thread = room.threadId,
                                                         threadkey = room.yourPostKey,
-                                                        user_id = embedded.user != null && embedded.user.id != null ? embedded.user.id : "guest",
+                                                        user_id = "guest",
                                                         nicoru = 0, res_from = -10, scores = 1, version = "20061206", with_global = 1
                                                     } },
                                                     new CommentSessionOpen() { ping = new ContentContainer() { content = "pf: 0" } },

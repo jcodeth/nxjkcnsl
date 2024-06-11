@@ -1,4 +1,35 @@
-﻿jkcnsl
+﻿nxjkcnsl
+
+■オリジナルからの変更内容など
+NX-jikkyoのコメントを取得する非公式のコマンドラインツールです。
+
+※呼び出し元プラグインの改造も必要です。
+オリジナルのjkcnslとLコマンドの仕様が異なります。
+例えばチャンネルjk1の場合、「Lch2646436」ではなく「L1」のようにチャンネルの
+数値部分のみ渡してください。
+コマンドの引数が異なるため、呼び出し元プラグインの改造も必要です。
+
+現時点では下記の制限があります。
+・コメント送信は未対応。（NX-jikkyoのWebサイトから送信してください。）
+・nxjkcnslだけの問題ではありませんが、channelsUri指定での勢い情報は未対応。
+
+■復旧までの一時利用を想定したNicoJK(xtne6f様版)の簡易的な改造例
+NicoJK.cppの2168行目付近
+ char ch[32];
+ sprintf_s(ch, _countof(ch), "%d", currentJKToGet_);
+ if (jkStream_.Send(hwnd, WMS_JK, 'L', ch)) {
+ //if (jkStream_.Send(hwnd, WMS_JK, 'L', (it->chatStreamID + " " + cookie_).c_str())) {
+
+JKStream.cppの87行目付近
+ //_tcscat_s(jkcnslPath, TEXT("jkcnsl.exe"));
+ _tcscat_s(jkcnslPath, TEXT("nxjkcnsl.exe"));
+
+
+ライセンス等はオリジナルに従います。
+
+以下、オリジナルのドキュメント
+
+jkcnsl
 
 ■概要
 おもにニコニコ実況のコメントを取得する非公式のコマンドラインツールです。
